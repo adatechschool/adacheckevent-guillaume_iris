@@ -1,131 +1,55 @@
-import { useState, useEffect } from "react";
+import { useEffect } from 'react';
+import useEvents from '../hooks/useEvents'
 
-// composant qui recupere  les infos limit et offset
-export default function Cards({ offset, limit, query = "", onCountChange }) {
+export default function Cards({ offset = 0, limit = 10, query = '', filters = {}, onCountChange }) {
+  const { items, total, loading, error } = useEvents({ query, filters, offset, limit });
 
-  const [allCards, setAllCards] = useState([]); // toutes les cartes
-  const [filteredCards, setFilteredCards] = useState([]); // après recherche
-  const [statesId, setStatesId] = useState([]);
-  
-
-  const noImg = "https://c.tenor.com/51xvC35-fDEAAAAd/tenor.gif";
-
-
-  // 🔹 Charger toutes les données une seule fois
-  const loadData = async () => {
-    try {
-      const response = await fetch(
-        "https://opendata.paris.fr/api/explore/v2.1/catalog/datasets/que-faire-a-paris-/records?limit=90"
-      );
-      const data = await response.json();
-      setAllCards(data.results || []);
-
-
-    } catch (error) {
-      console.error("Erreur lors du chargement des données :", error);
-
-      setAllCards([]);
-    }
-  };
-
-  // 🔹 Charger les données au montage
+  // Utilisation de 'useEffect' pour remonter le total (très bien fait dans votre code original)
   useEffect(() => {
-    loadData();
-  }, []); //auparavant offset,limit
-
-  // useEffect ecoute card
-  // a chaque modif statesId est rempli avec id des cartes et status à false
-  useEffect(() => {
-    if (allCards) {
-      const allStates = allCards.map(el => ({ id: el.event_id, status: false }));
-      setStatesId(allStates);
+    if (typeof onCountChange === 'function') {
+      onCountChange(total);
     }
-  }, [allCards]);
+  }, [total, onCountChange]);
 
-  // 🔹 Filtrer selon la query (insensible à la casse)
-  useEffect(() => {
-    let results = allCards;
-
-    if (query) {
-      const q = query.toLowerCase();
-      results = allCards.filter(
-        (el) =>
-          el.title?.toLowerCase().includes(q) ||
-          el.lead_text?.toLowerCase().includes(q)
-      );
-    }
-
-    setFilteredCards(results);
-
-    // ✅ notifier le parent du nombre total filtré
-    if (onCountChange) onCountChange(results.length);
-    
-  }, [allCards, query]);
-
-  // 🔹 Pagination sur les résultats filtrés
-  const pagedCards = filteredCards.slice(offset, offset + limit);
-
-  // ici l'objectif est de changer le status d'une carte au click en fonction de son id
-  function toggle(id) {
-    setStatesId(prev =>
-      prev.map(obj =>
-        obj.id === id 
-          ? { ...obj, status: !obj.status } : obj    
-      )
-    );
-  };
-  // on redéfinit StatesId
-
-  // ici on retourne juste l'etat de l'id selectionné
-  function returnState(id) {
-    // je map sur statesId pour trouver l'id cliqué et retourner son status
-    const found = statesId.find(obj => (obj.id === id))
-    // quand je la trouve je renvoie son status
-    // je dois m'assurer que found existe (ca s epeut qu'il n'existe pas ds le rendu) ca va beuguer
-    return found ? found.status : false;
-  }
-
- 
-
-  // ... tant que la data n'est pas récupérée
-  if (!allCards.length) return <div>Loading...</div>;
+  if (loading) return <p className="text-xl text-center p-8 text-blue-600">Chargement des événements...</p>;
+  if (error) return <p className="text-xl text-center p-8 text-red-600">Erreur : {error}</p>;
+  if (!items || items.length === 0) return <p className="text-xl text-center p-8 text-gray-500">Aucun évènement trouvé pour cette recherche/filtre.</p>;
 
   return (
-    <div>
-      {pagedCards.map((el) => (
-        <div
-          className="flex m-2 border rounded-xl gap-4 p-2 items-start"
-          key={el.event_id}
-        >
-          <img
-            className="m-2 max-h-40 w-40 object-cover rounded-xl"
-            src={el.cover_url || noImg}
-            alt={el.title}
-          />
-
-          <div className="flex-1">
-            <h2 className="m-2 inline-block w-full bg-blue-500 text-white rounded-xl px-2 py-1">
-              {el.title}
-            </h2>
-
-            {/* <p>{el.event_id}</p> */}
-
-            {/* carte depliée ou pas */}
-            {returnState(el.event_id) ? <div dangerouslySetInnerHTML={{ __html: el.description }} ></div> : <p>{el.lead_text}</p>}
-
-            <button className="m-5" onClick={() => toggle(el.event_id)}> {returnState(el.event_id) ? 'See Less' : 'See More'} </button>
-
-          </div >
-
-          <br></br>
-        </div>
-
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 mt-4">
+      {/* SIMPLIFICATION MAJEURE 2: L'objet 'e' est déjà propre grâce au hook useEvents */}
+      {items.map((e, i) => (
+        <article key={e.id ?? e.event_id ?? i} className="bg-white border border-gray-200 rounded-xl p-4 shadow-lg hover:shadow-xl transition duration-300">
+          {e.cover_url && (
+            <img
+              src={e.cover_url}
+              alt={e.cover_alt ?? e.title}
+              className="w-full h-40 object-cover mb-3 rounded-lg border border-gray-100"
+              // Fallback en cas d'erreur de chargement d'image
+              onError={(event) => {
+                event.target.onerror = null; 
+                event.target.src="https://placehold.co/400x160/D1D5DB/4B5563?text=Image+non+disponible";
+              }}
+            />
+          )}
+          <h3 className="font-bold text-xl text-gray-900 line-clamp-2">{e.title ?? e.title_event}</h3>
+          <p className="text-sm text-blue-600 mt-1">
+            {e.date_start ? new Date(e.date_start).toLocaleDateString('fr-FR') : "Date inconnue"}
+          </p>
+          <p className="mt-2 text-gray-700 text-base line-clamp-3">
+            {e.lead_text ?? (e.description ? e.description.slice(0, 120) + "..." : "Description non disponible")}
+          </p>
+          <div className="mt-3 text-xs text-gray-500 flex justify-between items-center">
+            <span className="bg-gray-200 px-2 py-0.5 rounded-full">{e.price_type ?? "N/A"}</span> 
+            <span className="bg-gray-200 px-2 py-0.5 rounded-full">{e.access_type ?? "N/A"}</span>
+          </div>
+          {e.url && (
+            <a href={e.url} target="_blank" rel="noreferrer" className="text-blue-600 font-semibold text-sm mt-3 inline-block hover:text-blue-800">
+              Voir l'évènement →
+            </a>
+          )}
+        </article>
       ))}
-
-      {pagedCards.length === 0 && (
-        <p className="text-center text-gray-500 mt-4">Aucun résultat trouvé.</p>
-      )}
     </div>
-
   );
 }
